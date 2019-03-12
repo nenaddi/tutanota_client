@@ -1,0 +1,27 @@
+[package]
+authors = ["Fredrik Portström <https://portstrom.com>"]
+description = "Thin wrapper over the Tutanota encrypted email service"
+edition = "2018"
+license-file = "LICENSE"
+name = "tutanota_client"
+readme = "readme.md"
+repository = "https://github.com/portstrom/tutanota_client"
+version = "0.1.0"
+
+[dependencies]
+aes = "0.3"
+base64 = "0.10"
+block-modes = "0.3"
+futures = "0.1"
+hmac = "0.7"
+hyper = "0.12"
+rust-crypto = "0.2"
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+sha2 = "0.8"
+urlencoding = "1"
+
+[dev-dependencies]
+hyper-tls = "0.3"
+rpassword = "2"
