@@ -11,13 +11,13 @@ use serde_derive::Deserialize;
 pub struct Membership {
     pub group: String,
     pub group_type: String,
-    #[serde(deserialize_with = "super::protocol::deserialize_base64")]
+    #[serde(with = "super::protocol::base64")]
     pub sym_enc_g_key: Vec<u8>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Response {
-    #[serde(deserialize_with = "super::protocol::deserialize_format")]
+    #[serde(with = "super::protocol::format")]
     _format: (),
     pub memberships: Vec<Membership>,
     #[serde(rename = "userGroup")]
@@ -27,7 +27,7 @@ pub struct Response {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserGroup {
-    #[serde(deserialize_with = "super::protocol::deserialize_base64")]
+    #[serde(with = "super::protocol::base64")]
     pub sym_enc_g_key: Vec<u8>,
 }
 
@@ -35,7 +35,7 @@ pub fn fetch_user<C: 'static + hyper::client::connect::Connect>(
     client: &hyper::Client<C, hyper::Body>,
     access_token: &str,
     user: &str,
-) -> impl hyper::rt::Future<Error = Error, Item = Response> {
+) -> impl futures::Future<Error = Error, Item = Response> {
     let url = format!("https://mail.tutanota.com/rest/sys/user/{}", user);
     super::authenticated_get::get(client, access_token, &url).and_then(|response_body| {
         serde_json::from_slice::<Response>(&response_body).map_err(Error::Format)

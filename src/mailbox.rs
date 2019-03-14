@@ -8,7 +8,7 @@ use serde_derive::Deserialize;
 
 #[derive(Deserialize)]
 struct Response {
-    #[serde(deserialize_with = "super::protocol::deserialize_format")]
+    #[serde(with = "super::protocol::format")]
     _format: (),
     #[serde(rename = "systemFolders")]
     system_folders: SystemFolders,

@@ -12,7 +12,7 @@ pub fn get<C: 'static + hyper::client::connect::Connect>(
     client: &hyper::Client<C, hyper::Body>,
     access_token: &str,
     url: &str,
-) -> impl hyper::rt::Future<Error = Error, Item = hyper::Chunk> {
+) -> impl futures::Future<Error = Error, Item = hyper::Chunk> {
     let mut request = hyper::Request::new(Default::default());
     // XXX Don't unwrap, but gracefully return error.
     request.headers_mut().insert(

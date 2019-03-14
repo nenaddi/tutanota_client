@@ -11,16 +11,16 @@ use serde_derive::Deserialize;
 
 #[derive(Deserialize)]
 struct Response {
-    #[serde(deserialize_with = "super::protocol::deserialize_format")]
+    #[serde(with = "super::protocol::format")]
     _format: (),
-    #[serde(deserialize_with = "super::protocol::deserialize_base64")]
+    #[serde(with = "super::protocol::base64")]
     salt: Vec<u8>,
 }
 
 pub fn fetch_salt<C: 'static + hyper::client::connect::Connect>(
     client: &hyper::Client<C, hyper::Body>,
     email_address: &str,
-) -> impl hyper::rt::Future<Error = Error, Item = Vec<u8>> {
+) -> impl futures::Future<Error = Error, Item = Vec<u8>> {
     let email_address = serde_json::to_string(email_address).unwrap();
     let email_address = urlencoding::encode(&email_address);
     let url = format!(

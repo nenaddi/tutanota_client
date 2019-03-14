@@ -8,17 +8,14 @@ use serde_derive::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct Mail {
-    #[serde(deserialize_with = "super::protocol::deserialize_format")]
+    #[serde(with = "super::protocol::format")]
     _format: (),
     pub attachments: Vec<(String, String)>,
     pub body: String,
-    #[serde(
-        deserialize_with = "super::protocol::deserialize_base64",
-        rename = "_ownerEncSessionKey"
-    )]
+    #[serde(with = "super::protocol::base64", rename = "_ownerEncSessionKey")]
     pub owner_enc_session_key: Vec<u8>,
     pub sender: Sender,
-    #[serde(deserialize_with = "super::protocol::deserialize_base64")]
+    #[serde(with = "super::protocol::base64")]
     pub subject: Vec<u8>,
 }
 
@@ -31,7 +28,7 @@ pub fn fetch_mail<C: 'static + hyper::client::connect::Connect>(
     client: &hyper::Client<C, hyper::Body>,
     access_token: &str,
     mails: &str,
-) -> impl hyper::rt::Future<Error = Error, Item = Vec<Mail>> {
+) -> impl futures::Future<Error = Error, Item = Vec<Mail>> {
     let url = format!(
         "https://mail.tutanota.com/rest/tutanota/mail/{}?start=zzzzzzzzzzzz&count=100&reverse=true",
         mails

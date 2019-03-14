@@ -8,56 +8,52 @@ use futures::{
     Future, Stream,
 };
 use serde_derive::{Deserialize, Serialize};
-use sha2::Digest;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Request<'a> {
-    access_key: (),
-    auth_token: (),
-    auth_verifier: String,
-    client_identifier: &'a str,
+    folder_name: String,
     #[serde(rename = "_format")]
     format: &'a str,
-    mail_address: &'a str,
-    recover_code_verifier: (),
-    user: (),
+    owner_enc_session_key: String,
+    parent_folder: &'a (String, String),
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Response {
+#[derive(Deserialize)]
+struct Response {
     #[serde(with = "super::protocol::format")]
     _format: (),
-    #[serde(rename = "accessToken")]
-    pub access_token: String,
-    pub user: String,
+    #[serde(rename = "newFolder")]
+    new_folder: (String, String),
 }
 
-pub fn fetch_session<C: 'static + hyper::client::connect::Connect>(
+pub fn create_mail_folder<C: 'static + hyper::client::connect::Connect>(
     client: &hyper::Client<C, hyper::Body>,
-    client_identifier: &str,
-    email_address: &str,
-    user_passphrase_key: &[u8],
-) -> impl hyper::rt::Future<Error = Error, Item = Response> {
-    let mut hasher = sha2::Sha256::new();
-    hasher.input(user_passphrase_key);
-    let hash = hasher.result();
-    let auth_verifier = base64::encode_config(&hash, base64::URL_SAFE_NO_PAD);
+    access_token: &str,
+    group_key: [u8; 16],
+    session_key: [u8; 16],
+    parent_folder: &(String, String),
+    name: &str,
+) -> impl futures::Future<Error = Error, Item = String> {
     let request_body = serde_json::to_string(&Request {
-        access_key: (),
-        auth_token: (),
-        auth_verifier,
-        client_identifier,
+        folder_name: base64::encode(&super::encrypt_with_mac(
+            &super::SubKeys::new(session_key),
+            name.as_bytes(),
+        )),
         format: "0",
-        mail_address: email_address,
-        recover_code_verifier: (),
-        user: (),
+        owner_enc_session_key: base64::encode(&super::encrypt_key(group_key, session_key)),
+        parent_folder,
     })
     .unwrap();
     let mut request = hyper::Request::new(hyper::Body::from(request_body));
     *request.method_mut() = hyper::Method::POST;
+    // XXX Don't unwrap, but gracefully return error.
+    request.headers_mut().insert(
+        "accessToken",
+        hyper::header::HeaderValue::from_str(access_token).unwrap(),
+    );
     *request.uri_mut() =
-        hyper::Uri::from_static("https://mail.tutanota.com/rest/sys/sessionservice");
+        hyper::Uri::from_static("https://mail.tutanota.com/rest/tutanota/mailfolderservice");
     client.request(request).then(|result| match result {
         Err(error) => Either::A(future::err(Error::Network(error))),
         Ok(response) => {
@@ -71,9 +67,10 @@ pub fn fetch_session<C: 'static + hyper::client::connect::Connect>(
             } else {
                 Either::B(response.into_body().concat2().then(|result| match result {
                     Err(error) => Err(Error::Network(error)),
-                    Ok(response_body) => {
-                        serde_json::from_slice::<Response>(&response_body).map_err(Error::Format)
-                    }
+                    Ok(response_body) => match serde_json::from_slice::<Response>(&response_body) {
+                        Err(error) => Err(Error::Format(error)),
+                        Ok(response_data) => Ok(response_data.new_folder.0),
+                    },
                 }))
             }
         }

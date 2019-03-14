@@ -8,7 +8,7 @@ use serde_derive::Deserialize;
 
 #[derive(Deserialize)]
 struct Response {
-    #[serde(deserialize_with = "super::protocol::deserialize_format")]
+    #[serde(with = "super::protocol::format")]
     _format: (),
     mailbox: String,
 }
@@ -17,7 +17,7 @@ pub fn fetch_mailboxgrouproot<C: 'static + hyper::client::connect::Connect>(
     client: &hyper::Client<C, hyper::Body>,
     access_token: &str,
     group: &str,
-) -> impl hyper::rt::Future<Error = Error, Item = String> {
+) -> impl futures::Future<Error = Error, Item = String> {
     let url = format!(
         "https://mail.tutanota.com/rest/tutanota/mailboxgrouproot/{}",
         group
