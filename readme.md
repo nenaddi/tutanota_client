@@ -12,6 +12,7 @@ The intention of making a thin wrapper is that a thick wrapper can be made as a 
 
 See the example program. It can be run with the command `cargo run --example example email_address operation`. It takes an email address as a command line argument and a password on the console. It takes an operation as the second command line argument:
 
+- **create_draft**: Creates a draft with the subject `Hello, World!`.
 - **create_folder**: Creates a mail folder with the name `Test created!`.
 - **manage_folders**: Shows the list of folders with their names. Deletes the first folder with a name starting with `Test delete!`. Renames the first folder with a name starting with `Test rename!`. Moves all mail from any folder with a name starting with `Test move from!` to any folder with a name starting with `Test move to!`.
 - **toggle_unread**: Toggles the unread status of the last mail in the inbox.

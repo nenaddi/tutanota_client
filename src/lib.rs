@@ -3,6 +3,7 @@
 // the file LICENSE at the top-level directory of this distribution.
 
 mod authenticated_get;
+pub mod create_draft;
 pub mod create_mail_folder;
 mod crypto;
 pub mod delete_mail_folder;

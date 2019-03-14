@@ -8,6 +8,7 @@ use futures::{
 };
 
 enum Operation {
+    CreateDraft,
     CreateFolder,
     ManageFolders,
     ToggleRead,
@@ -29,6 +30,7 @@ fn main() {
     }
     let email_address = arguments.next().unwrap();
     let operation = match &arguments.next().unwrap() as _ {
+        "create_draft" => Operation::CreateDraft,
         "create_folder" => Operation::CreateFolder,
         "manage_folders" => Operation::ManageFolders,
         "toggle_read" => Operation::ToggleRead,
@@ -69,7 +71,7 @@ fn main() {
                             )
                             .unwrap();
                             // XXX avoid panic
-                            let group_key = tutanota_client::decrypt_key(
+                            let mail_group_key = tutanota_client::decrypt_key(
                                 &user_group_key,
                                 &membership.sym_enc_g_key,
                             )
@@ -91,15 +93,16 @@ fn main() {
                                         &access_token,
                                         &folders,
                                     )
-                                    .and_then(move |folders| {
+                                    .and_then(move |folders| -> Box<dyn Future<Error = _, Item = _> + Send> {
                                         // XXX avoid panic
                                         match operation {
-                                            Operation::CreateFolder => Either::A(Either::A(tutanota_client::create_mail_folder::create_mail_folder(&client, &access_token, group_key, tutanota_client::create_key(), &folders[0].id, "Test created!").map(|folder| {
+                                            Operation::CreateDraft => Box::new(create_draft(&client, &email_address, &access_token, mail_group_key, user_group_key)),
+                                            Operation::CreateFolder => Box::new(tutanota_client::create_mail_folder::create_mail_folder(&client, &access_token, mail_group_key, tutanota_client::create_key(), &folders[0].id, "Test created!").map(|folder| {
                                                 dbg!(folder);
-                                            }))),
-                                            Operation::ManageFolders => Either::A(Either::B(manage_folders(client, access_token, group_key, &folders[0].sub_folders))),
-                                            Operation::ToggleRead => Either::B(Either::A(toggle_read(client, access_token, &folders[0].mails))),
-                                            Operation::ViewMail => Either::B(Either::B(fetch_mails(client, access_token, group_key, &folders[0].mails))),
+                                            })),
+                                            Operation::ManageFolders => Box::new(manage_folders(client, access_token, mail_group_key, &folders[0].sub_folders)),
+                                            Operation::ToggleRead => Box::new(toggle_read(client, access_token, &folders[0].mails)),
+                                            Operation::ViewMail => Box::new(fetch_mails(client, access_token, mail_group_key, &folders[0].mails)),
                                         }
                                     })
                                 })
@@ -131,17 +134,53 @@ fn main() {
     }));
 }
 
+fn create_draft<C: 'static + hyper::client::connect::Connect>(
+    client: &hyper::Client<C, hyper::Body>,
+    email_address: &str,
+    access_token: &str,
+    mail_group_key: [u8; 16],
+    user_group_key: [u8; 16],
+) -> impl Future<Error = tutanota_client::Error, Item = ()> {
+    let session_key = tutanota_client::create_key();
+    let sub_keys = tutanota_client::SubKeys::new(session_key);
+    tutanota_client::create_draft::create_draft(client, access_token, session_key, mail_group_key, user_group_key, tutanota_client::create_draft::DraftData {
+        added_attachments: &[],
+        bcc_recipients: &[],
+        body_text: tutanota_client::encrypt_with_mac(&sub_keys, b"This is a test message."),
+        cc_recipients: &[],
+        // XXX What's this for?
+        confidential: tutanota_client::encrypt_with_mac(&sub_keys, b"0"),
+        // XXX What's this for?
+        id: "xxxxxx",
+        removed_attachments: &[],
+        reply_tos: &[],
+        sender_mail_address: email_address,
+        sender_name: tutanota_client::encrypt_with_mac(&sub_keys, b"Bob"),
+        subject: tutanota_client::encrypt_with_mac(&sub_keys, b"Hello, World!"),
+        to_recipients: &[
+            tutanota_client::create_draft::Recipient {
+                // XXX What's this for?
+                id: "xxxxxx",
+                mail_address: "alice@example.com",
+                name: tutanota_client::encrypt_with_mac(&sub_keys, b"Alice"),
+            }
+        ],
+    }).map(|draft| {
+        dbg!(draft);
+    })
+}
+
 fn fetch_mails<C: 'static + hyper::client::connect::Connect>(
     client: hyper::Client<C, hyper::Body>,
     access_token: String,
-    group_key: [u8; 16],
+    mail_group_key: [u8; 16],
     mails: &str,
 ) -> impl Future<Error = tutanota_client::Error, Item = ()> {
     tutanota_client::mail::fetch_mail(&client, &access_token, mails).and_then(move |mails| {
         for mail in &mails {
             // XXX avoid panic
             let session_key =
-                tutanota_client::decrypt_key(&group_key, &mail.owner_enc_session_key).unwrap();
+                tutanota_client::decrypt_key(&mail_group_key, &mail.owner_enc_session_key).unwrap();
             let session_sub_keys = tutanota_client::SubKeys::new(session_key);
             // XXX avoid panic
             let title =
@@ -155,14 +194,14 @@ fn fetch_mails<C: 'static + hyper::client::connect::Connect>(
         }
         // XXX avoid panic
         let mail = mails.into_iter().next().unwrap();
-        fetch_mail_contents(client, access_token, group_key, mail)
+        fetch_mail_contents(client, access_token, mail_group_key, mail)
     })
 }
 
 fn fetch_mail_contents<C: 'static + hyper::client::connect::Connect>(
     client: hyper::Client<C, hyper::Body>,
     access_token: String,
-    group_key: [u8; 16],
+    mail_group_key: [u8; 16],
     mail: tutanota_client::mail::Mail,
 ) -> impl Future<Error = tutanota_client::Error, Item = ()> {
     let attachment_future = match mail.attachments.first() {
@@ -184,7 +223,7 @@ fn fetch_mail_contents<C: 'static + hyper::client::connect::Connect>(
         .join(mailbody_future)
         .map(move |(file, text)| {
             // XXX avoid panic
-            let session_key = tutanota_client::decrypt_key(&group_key, &session_key).unwrap();
+            let session_key = tutanota_client::decrypt_key(&mail_group_key, &session_key).unwrap();
             let session_sub_keys = tutanota_client::SubKeys::new(session_key);
             // XXX avoid panic
             let text = tutanota_client::decrypt_with_mac(&session_sub_keys, &text).unwrap();
@@ -193,7 +232,8 @@ fn fetch_mail_contents<C: 'static + hyper::client::connect::Connect>(
             if let Some((file, file_data)) = file {
                 // XXX avoid panic
                 let session_key =
-                    tutanota_client::decrypt_key(&group_key, &file.owner_enc_session_key).unwrap();
+                    tutanota_client::decrypt_key(&mail_group_key, &file.owner_enc_session_key)
+                        .unwrap();
                 let session_sub_keys = tutanota_client::SubKeys::new(session_key);
                 // XXX avoid panic
                 let mime_type =
@@ -219,7 +259,7 @@ fn fetch_mail_contents<C: 'static + hyper::client::connect::Connect>(
 fn manage_folders<C: 'static + hyper::client::connect::Connect>(
     client: hyper::Client<C, hyper::Body>,
     access_token: String,
-    group_key: [u8; 16],
+    mail_group_key: [u8; 16],
     folders: &str,
 ) -> impl Future<Error = tutanota_client::Error, Item = ()> {
     tutanota_client::mailfolder::fetch_mailfolder(&client, &access_token, folders).and_then(
@@ -231,7 +271,7 @@ fn manage_folders<C: 'static + hyper::client::connect::Connect>(
             for folder in folders {
                 // XXX avoid panic
                 let session_key =
-                    tutanota_client::decrypt_key(&group_key, &folder.owner_enc_session_key)
+                    tutanota_client::decrypt_key(&mail_group_key, &folder.owner_enc_session_key)
                         .unwrap();
                 let session_sub_keys = tutanota_client::SubKeys::new(session_key);
                 // XXX avoid panic
@@ -261,9 +301,11 @@ fn manage_folders<C: 'static + hyper::client::connect::Connect>(
                 None => Either::A(future::ok(())),
                 Some(mut folder) => {
                     // XXX avoid panic
-                    let session_key =
-                        tutanota_client::decrypt_key(&group_key, &folder.owner_enc_session_key)
-                            .unwrap();
+                    let session_key = tutanota_client::decrypt_key(
+                        &mail_group_key,
+                        &folder.owner_enc_session_key,
+                    )
+                    .unwrap();
                     let session_sub_keys = tutanota_client::SubKeys::new(session_key);
                     folder.name =
                         tutanota_client::encrypt_with_mac(&session_sub_keys, b"Test renamed!");

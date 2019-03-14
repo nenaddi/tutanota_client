@@ -17,8 +17,8 @@ struct Request<'a> {
     auth_token: (),
     auth_verifier: String,
     client_identifier: &'a str,
-    #[serde(rename = "_format")]
-    format: &'a str,
+    #[serde(rename = "_format", with = "super::protocol::format")]
+    format: (),
     mail_address: &'a str,
     recover_code_verifier: (),
     user: (),
@@ -48,7 +48,7 @@ pub fn fetch_session<C: 'static + hyper::client::connect::Connect>(
         auth_token: (),
         auth_verifier,
         client_identifier,
-        format: "0",
+        format: (),
         mail_address: email_address,
         recover_code_verifier: (),
         user: (),
