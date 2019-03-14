@@ -16,6 +16,7 @@ pub mod mailfolder;
 mod protocol;
 pub mod salt;
 pub mod session;
+pub mod update_mail;
 pub mod update_mail_folder;
 pub mod user;
 

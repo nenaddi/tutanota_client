@@ -7,6 +7,7 @@ use futures::Future;
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Folder {
     #[serde(rename = "folderType")]
     pub folder_type: String,

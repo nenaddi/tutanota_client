@@ -10,6 +10,7 @@ use futures::{
 enum Operation {
     CreateFolder,
     ManageFolders,
+    ToggleRead,
     ViewMail,
 }
 
@@ -18,7 +19,7 @@ fn main() {
     let program = arguments.next().unwrap();
     let quit = || {
         eprintln!(
-            "Usage: {} email_address create_folder|manage_folders|view_mail",
+            "Usage: {} email_address create_folder|manage_folders|view_mail|toggle_read",
             program
         );
         std::process::exit(1);
@@ -30,6 +31,7 @@ fn main() {
     let operation = match &arguments.next().unwrap() as _ {
         "create_folder" => Operation::CreateFolder,
         "manage_folders" => Operation::ManageFolders,
+        "toggle_read" => Operation::ToggleRead,
         "view_mail" => Operation::ViewMail,
         _ => quit(),
     };
@@ -90,11 +92,13 @@ fn main() {
                                         &folders,
                                     )
                                     .and_then(move |folders| {
+                                        // XXX avoid panic
                                         match operation {
-                                            Operation::CreateFolder => Either::A(tutanota_client::create_mail_folder::create_mail_folder(&client, &access_token, group_key, tutanota_client::create_key(), &folders[0].id, "Test created!").map(|folder| {
+                                            Operation::CreateFolder => Either::A(Either::A(tutanota_client::create_mail_folder::create_mail_folder(&client, &access_token, group_key, tutanota_client::create_key(), &folders[0].id, "Test created!").map(|folder| {
                                                 dbg!(folder);
-                                            })),
-                                            Operation::ManageFolders => Either::B(Either::A(manage_folders(client, access_token, group_key, &folders[0].sub_folders))),
+                                            }))),
+                                            Operation::ManageFolders => Either::A(Either::B(manage_folders(client, access_token, group_key, &folders[0].sub_folders))),
+                                            Operation::ToggleRead => Either::B(Either::A(toggle_read(client, access_token, &folders[0].mails))),
                                             Operation::ViewMail => Either::B(Either::B(fetch_mails(client, access_token, group_key, &folders[0].mails))),
                                         }
                                     })
@@ -267,4 +271,22 @@ fn manage_folders<C: 'static + hyper::client::connect::Connect>(
             delete_future.join(rename_future).map(|_| ())
         },
     )
+}
+
+fn toggle_read<C: 'static + hyper::client::connect::Connect>(
+    client: hyper::Client<C, hyper::Body>,
+    access_token: String,
+    mails: &str,
+) -> impl Future<Error = tutanota_client::Error, Item = ()> {
+    tutanota_client::mail::fetch_mail(&client, &access_token, mails).and_then(move |mut mails| {
+        // XXX avoid panic
+        let mail = mails.last_mut().unwrap();
+        mail.unread = match &mail.unread as _ {
+            "0" => "1",
+            "1" => "0",
+            _ => panic!(), // XXX avoid panic
+        }
+        .into();
+        tutanota_client::update_mail::update_mail(&client, &access_token, &mail)
+    })
 }
