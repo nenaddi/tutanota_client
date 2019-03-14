@@ -225,6 +225,8 @@ fn manage_folders<C: 'static + hyper::client::connect::Connect>(
     tutanota_client::mailfolder::fetch_mailfolder(&client, &access_token, folders).and_then(
         move |folders| {
             let mut delete_id = None;
+            let mut move_from_mails = None;
+            let mut move_to_id = None;
             let mut rename_folder = None;
             for folder in folders {
                 // XXX avoid panic
@@ -239,6 +241,10 @@ fn manage_folders<C: 'static + hyper::client::connect::Connect>(
                 println!("folder, name: {:?}", std::str::from_utf8(&name).unwrap(),);
                 if name.starts_with(b"Test delete!") {
                     delete_id.get_or_insert(folder.id);
+                } else if name.starts_with(b"Test move from!") {
+                    move_from_mails.get_or_insert(folder.mails);
+                } else if name.starts_with(b"Test move to!") {
+                    move_to_id.get_or_insert(folder.id);
                 } else if name.starts_with(b"Test rename!") {
                     rename_folder.get_or_insert(folder);
                 }
@@ -268,9 +274,44 @@ fn manage_folders<C: 'static + hyper::client::connect::Connect>(
                     ))
                 }
             };
-            delete_future.join(rename_future).map(|_| ())
+            let move_future = match (move_from_mails, move_to_id) {
+                (Some(move_from_mails), Some(move_to_id)) => Either::A(move_mail(
+                    client,
+                    access_token,
+                    &move_from_mails,
+                    move_to_id,
+                )),
+                _ => Either::B(future::ok(())),
+            };
+            delete_future
+                .join(move_future)
+                .join(rename_future)
+                .map(|_| ())
         },
     )
+}
+
+fn move_mail<C: 'static + hyper::client::connect::Connect>(
+    client: hyper::Client<C, hyper::Body>,
+    access_token: String,
+    mails: &str,
+    move_to_id: (String, String),
+) -> impl Future<Error = tutanota_client::Error, Item = ()> {
+    tutanota_client::mail::fetch_mail(&client, &access_token, mails).and_then(move |mails| {
+        eprintln!("mails to move: {}", mails.len());
+        if mails.is_empty() {
+            Either::A(future::ok(()))
+        } else {
+            let ids: Vec<_> = mails.iter().map(|mail| &mail.id).collect();
+            // XXX avoid panic
+            Either::B(tutanota_client::move_mail::move_mail(
+                &client,
+                &access_token,
+                &ids,
+                &move_to_id,
+            ))
+        }
+    })
 }
 
 fn toggle_read<C: 'static + hyper::client::connect::Connect>(

@@ -13,6 +13,7 @@ pub mod mailbody;
 pub mod mailbox;
 pub mod mailboxgrouproot;
 pub mod mailfolder;
+pub mod move_mail;
 mod protocol;
 pub mod salt;
 pub mod session;
